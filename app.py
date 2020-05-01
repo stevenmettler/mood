@@ -5,6 +5,7 @@ import uuid
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 import datetime
+from datetime import date, timedelta
 from functools import wraps
 import os
 
@@ -43,13 +44,17 @@ class User(db.Model):
     name = db.Column(db.String(50))
     password = db.Column(db.String(80))
     admin = db.Column(db.Boolean)
+    current_streak = db.Column(db.Integer)
+    max_streak = db.Column(db.Integer)
 
     
-    def __init__(self, public_id, name, password, admin):
+    def __init__(self, public_id, name, password, admin, current_streak, max_streak):
         self.name = name
         self.password = password
         self.admin = admin
         self.public_id = public_id
+        self.current_streak = current_streak
+        self.max_streak = max_streak
     
 
 #Schema
@@ -59,7 +64,7 @@ class MoodSchema(ma.Schema):
 
 class UserSchema(ma.Schema):
     class Meta:
-        fields = ('id', 'username', 'password_hash')
+        fields = ('id', 'public_id', 'name', 'password', 'admin', 'current_streak', 'max_streak')
 
 #Init Schema
 mood_schema = MoodSchema(strict=True)
@@ -93,25 +98,45 @@ def token_required(f):
 @app.route('/mood', methods=['POST', 'GET'])
 @token_required
 def add_mood(current_user):
+    moods = Mood.query.filter_by(user_id = current_user.public_id)
+    user = User.query.filter_by(public_id = current_user.public_id).first()
+    output = []
+    for mood in moods:
+        mood_data = {}
+        mood_data['feeling'] = mood.feeling
+        mood_data['current_streak'] = user.current_streak
+        output.append(mood_data)
+
     if request.method == 'POST':
         feeling = request.json['feeling']
         timestamp = datetime.datetime.utcnow()
+        # timestamp = datetime.datetime(2020, 5, 4, 10, 10, 10, 123456)
         new_mood = Mood(feeling, current_user.public_id, timestamp)
         
+        #base case, first submitted mood
+        if len(output)== 0:
+            user.current_streak = 1
+        else:
+            last = moods.order_by(Mood.timestamp.desc()).first()
+            last_time = datetime.datetime.strptime(last.timestamp, '%Y-%m-%d %H:%M:%S.%f')
+            if (timestamp.date() - last_time.date()).days == 1:
+                print("Another day on the streak")
+                user.current_streak = user.current_streak + 1
+                user.max_streak = max(user.max_streak, user.current_streak)
+            elif (timestamp.date() - last_time.date()).days == 0:
+                user.max_streak = max(user.max_streak, user.current_streak)
+            else:
+                print("First day streak or streak reset")
+                user.max_streak = max(user.max_streak, user.current_streak)
+                user.current_streak = 1
 
+        
         db.session.add(new_mood)
         db.session.commit()
 
         return mood_schema.jsonify(new_mood)
     elif request.method == 'GET':
-        moods = Mood.query.filter_by(user_id = current_user.public_id)
 
-        output = []
-        for mood in moods:
-            mood_data = {}
-            mood_data['feeling'] = mood.feeling
-            output.append(mood_data)
-        
         return jsonify({'moods': output})
 
 #get all users
@@ -132,6 +157,8 @@ def get_all_users(current_user):
         user_data['name'] = user.name
         user_data['password'] = user.password
         user_data['admin'] = user.admin
+        user_data['current_streak'] = user.current_streak
+        user_data['max_streak'] = user.max_streak
         output.append(user_data)
 
     return jsonify({'users': output})
@@ -150,6 +177,8 @@ def get_one_user(current_user, public_id):
     user_data['name'] = user.name
     user_data['password'] = user.password
     user_data['admin'] = user.admin
+    user_data['current_streak'] = user.current_streak
+    user_data['max_streak'] = user.max_streak
 
     return jsonify({'user': user_data})
 
@@ -157,13 +186,14 @@ def get_one_user(current_user, public_id):
 
 
 @app.route('/user', methods=['POST'])
-@token_required
-def create_user(current_user):
+# @token_required
+# def create_user(current_user):
+def create_user():
     data = request.get_json()
 
     hashed_password = generate_password_hash(data['password'], method='sha256')
 
-    new_user = User(public_id=str(uuid.uuid4()), name = data['name'], password = hashed_password, admin = False)
+    new_user = User(public_id=str(uuid.uuid4()), name = data['name'], password = hashed_password, admin = False, current_streak = 0, max_streak = 0)
     db.session.add(new_user)
     db.session.commit()
 

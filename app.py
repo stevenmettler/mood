@@ -7,6 +7,7 @@ import jwt
 import datetime
 from datetime import date, timedelta
 from functools import wraps
+from scipy import stats
 import os
 
 #init
@@ -100,11 +101,21 @@ def token_required(f):
 def add_mood(current_user):
     moods = Mood.query.filter_by(user_id = current_user.public_id)
     user = User.query.filter_by(public_id = current_user.public_id).first()
+    all_names = User.query.all()
+
+    streaks = []
+    for name in all_names:
+        streaks.append(name.max_streak)
+    
+    percentile = stats.percentileofscore(streaks, user.max_streak)
+
     output = []
     for mood in moods:
         mood_data = {}
         mood_data['feeling'] = mood.feeling
         mood_data['current_streak'] = user.current_streak
+        if percentile >= 50.0:
+            mood_data['streak_percentile'] = percentile
         output.append(mood_data)
 
     if request.method == 'POST':
@@ -116,6 +127,7 @@ def add_mood(current_user):
         #base case, first submitted mood
         if len(output)== 0:
             user.current_streak = 1
+            user.max_streak = 1
         else:
             last = moods.order_by(Mood.timestamp.desc()).first()
             last_time = datetime.datetime.strptime(last.timestamp, '%Y-%m-%d %H:%M:%S.%f')

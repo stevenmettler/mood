@@ -8,6 +8,7 @@ Hi! Welcome to **mood**. This app has been created for NeuroFlow as an interview
 1. Clone this repo with `git clone https://github.com/stevenmettler/mood` and navigate on your local machine to the cloned folder
 2. Run `docker build -t moodapp .` on the `mood` working directory to build the docker container
 3. Run `docker run -it -p 5000:5000 moodapp` on the `mood` working directory to then run the app!
+4. Hit the below endpoints at `http://0.0.0.0:5000`, which the Docker container exposes.
 
 ## Endpoints
 #### In the mood app, three endpoints are exposed to the user running the app.
